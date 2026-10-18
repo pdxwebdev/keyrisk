@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ title }}</title>
+  <style>
+    :root {
+      --bg: #f5f2ec;
+      --panel: #ffffff;
+      --ink: #172021;
+      --muted: #5a6667;
+      --accent: #0b7d77;
+      --accent-2: #f38b51;
+      --danger: #c84032;
+      --ring: rgba(11, 125, 119, 0.2);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "Gill Sans", "Trebuchet MS", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 20% 10%, rgba(243, 139, 81, 0.18), transparent 40%),
+        radial-gradient(circle at 80% 5%, rgba(11, 125, 119, 0.2), transparent 38%),
+        linear-gradient(180deg, #f8f5ef 0%, #efe8dc 100%);
+      min-height: 100vh;
+    }
+    main {
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 44px 18px 72px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.8rem, 3vw, 2.8rem);
+      letter-spacing: 0.01em;
+    }
+    .subtitle {
+      color: var(--muted);
+      margin-bottom: 28px;
+      max-width: 75ch;
+      line-height: 1.45;
+    }
+    .panel {
+      background: var(--panel);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(23, 32, 33, 0.08);
+      border: 1px solid rgba(23, 32, 33, 0.08);
+      padding: 22px;
+      margin-bottom: 18px;
+      animation: rise 360ms ease-out;
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    form {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    label { font-weight: 600; }
+    input, select, button {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid rgba(23, 32, 33, 0.2);
+      padding: 11px 12px;
+      font-size: 1rem;
+      background: #fff;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px var(--ring);
+    }
+    button {
+      border: 0;
+      color: #fff;
+      font-weight: 700;
+      cursor: pointer;
+      background: linear-gradient(90deg, var(--accent), #0b595a);
+      transition: transform 140ms ease;
+    }
+    button:hover { transform: translateY(-1px); }
+    button:disabled { opacity: 0.7; cursor: wait; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 0.84rem;
+      margin-right: 8px;
+      margin-bottom: 8px;
+      background: rgba(11, 125, 119, 0.1);
+      color: #0b595a;
+    }
+    .pill.risk { background: rgba(200, 64, 50, 0.12); color: var(--danger); }
+    .muted { color: var(--muted); }
+    pre {
+      background: #101313;
+      color: #d4efee;
+      padding: 12px;
+      border-radius: 12px;
+      overflow-x: auto;
+      font-size: 0.88rem;
+      line-height: 1.4;
+    }
+    @media (max-width: 740px) {
+      main { padding-top: 26px; }
+      .panel { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Key Risk Analyzer</h1>
+    <p class="subtitle">
+      Self-verify an address and review current risk flags. The worker continuously crawls configured realms and updates scores for external API consumers.
+    </p>
+
+    <section class="panel">
+      <form id="verify-form">
+        <div>
+          <label for="realm">Realm</label>
+          <select id="realm" name="realm">
+            {% if realms %}
+              {% for realm in realms %}
+              <option value="{{ realm }}">{{ realm }}</option>
+              {% end %}
+            {% else %}
+              <option value="bsc">bsc</option>
+            {% end %}
+          </select>
+        </div>
+
+        <div>
+          <label for="address">Address</label>
+          <input
+            id="address"
+            name="address"
+            placeholder="0x..."
+            pattern="^0x[a-fA-F0-9]{40}$"
+            required
+          />
+        </div>
+
+        <button id="submit-btn" type="submit">Analyze Key Risk</button>
+      </form>
+      <p class="muted">API endpoint: /key-risk/api/v1/self-verify</p>
+    </section>
+
+    <section class="panel" id="result-panel" hidden>
+      <h2>Verification Result</h2>
+      <div id="risk-summary"></div>
+      <pre id="result-json"></pre>
+    </section>
+  </main>
+
+  <script>
+    const form = document.getElementById("verify-form");
+    const submitBtn = document.getElementById("submit-btn");
+    const resultPanel = document.getElementById("result-panel");
+    const resultJson = document.getElementById("result-json");
+    const riskSummary = document.getElementById("risk-summary");
+
+    function renderPill(text, isRisk) {
+      const span = document.createElement("span");
+      span.className = isRisk ? "pill risk" : "pill";
+      span.textContent = text;
+      return span;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Analyzing...";
+
+      const payload = {
+        realm: document.getElementById("realm").value,
+        address: document.getElementById("address").value.trim(),
+      };
+
+      try {
+        const response = await fetch("/key-risk/api/v1/self-verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Request failed");
+        }
+
+        resultPanel.hidden = false;
+        riskSummary.innerHTML = "";
+
+        const result = data.result || {};
+        riskSummary.appendChild(renderPill("realm: " + (result.realm || payload.realm), false));
+        riskSummary.appendChild(renderPill("score: " + (result.risk_score || 0), (result.risk_score || 0) > 0));
+
+        const flags = result.risk_flags || [];
+        if (!flags.length) {
+          riskSummary.appendChild(renderPill("no risk flags", false));
+        } else {
+          flags.forEach((flag) => {
+            riskSummary.appendChild(renderPill(flag, true));
+          });
+        }
+
+        resultJson.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        resultPanel.hidden = false;
+        riskSummary.innerHTML = "";
+        riskSummary.appendChild(renderPill("error", true));
+        resultJson.textContent = err.message;
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Analyze Key Risk";
+      }
+    });
+  </script>
+</body>
+</html>
